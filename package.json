@@ -1,35 +1,23 @@
 {
-	"name": "puppeteer-stream",
+	"name": "@semiconscious/puppeteer-stream-webrtc",
 	"version": "3.0.18",
 	"description": "",
 	"main": "dist/PuppeteerStream.js",
 	"types": "dist/PuppeteerStream.d.ts",
 	"scripts": {
-		"build": "tsc -p . && tsc -p extension",
+		"build": "tsc -p . && node build.mjs",
 		"test": "node examples/file.js"
 	},
-	"keywords": [
-		"puppeteer",
-		"video",
-		"audio",
-		"stream",
-		"screenshot",
-		"recorder"
-	],
-	"author": "SamuelScheit",
-	"repository": {
-		"url": "https://github.com/SamuelScheit/puppeteer-stream"
-	},
-	"license": "MIT",
+	"license": "closed",
 	"dependencies": {
-		"puppeteer-core": "^22.12.0",
-		"ws": "^8.17.1"
+		"puppeteer-core": "^22.12.0"
 	},
 	"devDependencies": {
 		"@types/chrome": "^0.0.272",
 		"@types/node": "^14.14.14",
 		"@types/puppeteer": "^5.4.2",
-		"@types/ws": "^8.5.10",
+		"esbuild": "^0.25.1",
+		"socket.io-client": "^4.8.1",
 		"typescript": "^4.5.5"
 	}
 }

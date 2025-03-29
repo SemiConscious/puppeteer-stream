@@ -7,12 +7,8 @@ import {
 	BrowserConnectOptions,
 } from "puppeteer-core";
 import * as path from "path";
-import { Transform } from "stream";
-import WebSocket, { WebSocketServer } from "ws";
-import { IncomingMessage } from "http";
 
 const extensionId = "jjndjgheafjngoipoacpjgeicjeomjli";
-let currentIndex = 0;
 type StreamLaunchOptions = LaunchOptions &
 	BrowserLaunchArgumentOptions &
 	BrowserConnectOptions & {
@@ -24,30 +20,8 @@ type StreamLaunchOptions = LaunchOptions &
 	};
 let port: number;
 
-export const wss = (async () => {
-	for (let i = 55200; i <= 65535; i++) {
-		const ws = new WebSocketServer({ port: i });
-		const promise = await Promise.race([
-			new Promise((resolve) => {
-				ws.on("error", (e: any) => {
-					resolve(!e.message.includes("EADDRINUSE"));
-				});
-			}),
-			new Promise((resolve) => {
-				ws.on("listening", () => {
-					resolve(true);
-				});
-			}),
-		]);
-		if (promise) {
-			port = i;
-			return ws;
-		}
-	}
-})();
-
 export async function launch(
-	arg1: StreamLaunchOptions | { launch?: Function; [key: string]: any },
+	arg1: StreamLaunchOptions | { launch?: Function;[key: string]: any },
 	opts?: StreamLaunchOptions
 ): Promise<Browser> {
 	//if puppeteer library is not passed as first argument, then first argument is options
@@ -148,85 +122,13 @@ export async function launch(
 	return browser;
 }
 
-export type BrowserMimeType =
-	| "video/webm"
-	| "video/webm;codecs=vp8"
-	| "video/webm;codecs=vp9"
-	| "video/webm;codecs=vp8.0"
-	| "video/webm;codecs=vp9.0"
-	| "video/webm;codecs=vp8,opus"
-	| "video/webm;codecs=vp8,pcm"
-	| "video/WEBM;codecs=VP8,OPUS"
-	| "video/webm;codecs=vp9,opus"
-	| "video/webm;codecs=vp8,vp9,opus"
-	| "audio/webm"
-	| "audio/webm;codecs=opus"
-	| "audio/webm;codecs=pcm"
-	| "video/mp4"
-	| "video/mp4;codecs=avc1,mp4a.40.2"
-	| "video/mp4;codecs=vp9,mp4a.40.2"
-	| "video/mp4;codecs=av01,mp4a.40.2";
-
-export type Constraints = {
-	mandatory?: MediaTrackConstraints;
-	optional?: MediaTrackConstraints;
-};
-
-interface IPuppeteerStreamOpts {
-	onDestroy: () => Promise<void>;
-	highWaterMarkMB: number;
-	immediateResume: boolean;
-	port: number;
-}
-
-interface TabQueryOptions {
-	active?: boolean;
-	audible?: boolean;
-	autoDiscardable?: boolean;
-	currentWindow?: boolean;
-	discarded?: boolean;
-	groupId?: number;
-	highlighted?: boolean;
-	index?: number;
-	lastFocusedWindow?: boolean;
-	muted?: boolean;
-	pinned?: boolean;
-	status?: TabStatus;
-	title?: string;
-	url?: string | string[];
-	windowId?: number;
-	windowType?: WindowType;
-}
-
-type TabStatus = "unloaded" | "loading" | "complete";
-
-type WindowType = "normal" | "popup" | "panel" | "app" | "devtools";
-
 export interface getStreamOptions {
 	audio: boolean;
 	video: boolean;
-	videoConstraints?: Constraints;
-	audioConstraints?: Constraints;
-	mimeType?: BrowserMimeType;
-	audioBitsPerSecond?: number;
-	videoBitsPerSecond?: number;
-	bitsPerSecond?: number;
-	frameSize?: number;
-	delay?: number;
-	/**
-	 * Tab query options to target the correct tab,
-	 * see [Chrome's extensions documentation](https://developer.chrome.com/docs/extensions/reference/api/tabs#method-query) for more info.
-	 */
-	tabQuery?: TabQueryOptions;
-	retry?: {
-		each?: number;
-		times?: number;
-	};
-	streamConfig?: {
-		highWaterMarkMB?: number;
-		immediateResume?: boolean;
-		closeTimeout?: number;
-	};
+	videoConstraints?: any;
+	audioConstraints?: any;
+	webSocketUrl: string;
+	sessionId: string
 }
 
 export async function getExtensionPage(browser: Browser) {
@@ -243,6 +145,7 @@ export async function getExtensionPage(browser: Browser) {
 
 let mutex = false;
 let queue: Function[] = [];
+const retryPolicy = { each: 20, times: 3 };
 
 function lock() {
 	return new Promise((res) => {
@@ -259,89 +162,55 @@ function unlock() {
 	else mutex = false;
 }
 
+export async function stopStream(page: Page, sessionId: string) {
+	const extension = await getExtensionPage(page.browser());
+	await lock();
+	await page.bringToFront();
+	await assertExtensionLoaded(extension, retryPolicy);
+	// @ts-ignore
+	await extension.evaluate((sessionId) => STOP_RECORDING(sessionId), sessionId);
+	unlock();
+}
+
 export async function getStream(page: Page, opts: getStreamOptions) {
 	if (!opts.audio && !opts.video) throw new Error("At least audio or video must be true");
-	if (!opts.mimeType) {
-		if (opts.video) opts.mimeType = "video/webm";
-		else if (opts.audio) opts.mimeType = "audio/webm";
-	}
-	if (!opts.frameSize) opts.frameSize = 20;
-	const retryPolicy = Object.assign({}, { each: 20, times: 3 }, opts.retry);
 
 	const extension = await getExtensionPage(page.browser());
 
-	const highWaterMarkMB = opts.streamConfig?.highWaterMarkMB || 8;
-	const index = currentIndex++;
-
 	await lock();
-
 	await page.bringToFront();
 	const [tab] = await extension.evaluate(
 		async (x) => {
-			// @ts-ignore
 			return chrome.tabs.query(x);
 		},
-		opts.tabQuery || {
+		{
 			active: true,
 		}
 	);
-
 	unlock();
 	if (!tab) throw new Error("Cannot find tab, try providing your own tabQuery to getStream options");
 
-	const stream = new Transform({
-		highWaterMark: 1024 * 1024 * highWaterMarkMB,
-		transform(chunk, encoding, callback) {
-			callback(null, chunk);
-		},
-	});
-
-	function onConnection(ws: WebSocket, req: IncomingMessage) {
-		const url = new URL(`http://localhost:${port}${req.url}`);
-		if (url.searchParams.get("index") != index.toString()) return;
-
-		async function close() {
-			if (!stream.readableEnded && !stream.writableEnded) stream.end();
-			if (!extension.isClosed() && extension.browser().isConnected()) {
-				// @ts-ignore
-				extension.evaluate((index) => STOP_RECORDING(index), index);
-			}
-
-			if (ws.readyState != WebSocket.CLOSED) {
-				setTimeout(() => {
-					// await pending messages to be sent and then close the socket
-					if (ws.readyState != WebSocket.CLOSED) ws.close();
-				}, opts.streamConfig?.closeTimeout ?? 5000);
-			}
-			(await wss).off("connection", onConnection);
+	page.on("close", () => {
+		if (!extension.isClosed() && extension.browser().connected) {
+			// @ts-ignore
+			extension.evaluate((index) => STOP_RECORDING(index), index);
 		}
-
-		ws.on("message", (data) => {
-			stream.write(data);
-		});
-
-		ws.on("close", close);
-		page.on("close", close);
-		stream.on("close", close);
-	}
-
-	(await wss).on("connection", onConnection);
+	});
 
 	await lock();
 	await page.bringToFront();
 	await assertExtensionLoaded(extension, retryPolicy);
-
 	await extension.evaluate(
 		// @ts-ignore
 		(settings) => START_RECORDING(settings),
-		{ ...opts, index, tabId: tab.id }
+		opts
 	);
 	unlock();
 
-	return stream;
+	return 'ok';
 }
 
-async function assertExtensionLoaded(ext: Page, opt: getStreamOptions["retry"]) {
+async function assertExtensionLoaded(ext: Page, opt: { each: number; times: number }) {
 	const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
 	for (let currentTick = 0; currentTick < opt.times; currentTick++) {
 		// @ts-ignore

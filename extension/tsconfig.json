@@ -1,12 +1,20 @@
 {
-	"include": ["./options.ts"],
+	"include": [
+		"./options.ts"
+	],
 	"compilerOptions": {
 		"target": "ES2017",
 		"module": "ESNext",
-		"lib": ["ES2015", "DOM"],
-		"types": ["chrome"],
+		"lib": [
+			"ES2015",
+			"DOM"
+		],
+		"types": [
+			"chrome"
+		],
 		"skipLibCheck": true,
 		"declaration": false,
-		"allowJs": false
+		"allowJs": false,
+		"moduleResolution": "node",
 	}
 }
