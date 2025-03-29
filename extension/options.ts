@@ -7,6 +7,7 @@ export type RecordingOptions = {
 	audioConstraints?: chrome.tabCapture.MediaStreamConstraint;
 	webSocketUrl: string;
 	sessionId: string;
+	peerConnectionConfig: any
 };
 
 enum IoState {
@@ -128,14 +129,15 @@ class Session {
 
 	private stream?: MediaStream
 	private client: SocketIOClient
-	private peerConnection = new RTCPeerConnection();
+	private peerConnection: RTCPeerConnection
 
 	constructor(
 		private options: RecordingOptions,
 		private handleSessionClose: (sessionId: string) => void
 	) {
-		const { sessionId, webSocketUrl } = this.options;
+		const { sessionId, webSocketUrl, peerConnectionConfig } = this.options;
 		this.client = new SocketIOClient(sessionId, webSocketUrl, this.handleWebsocketMessage.bind(this));
+		this.peerConnection = new RTCPeerConnection(peerConnectionConfig);
 	}
 
 	async start() {

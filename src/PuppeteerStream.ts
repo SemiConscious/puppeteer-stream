@@ -128,7 +128,8 @@ export interface getStreamOptions {
 	videoConstraints?: any;
 	audioConstraints?: any;
 	webSocketUrl: string;
-	sessionId: string
+	sessionId: string;
+	peerConnectionConfig?: any;
 }
 
 export async function getExtensionPage(browser: Browser) {
